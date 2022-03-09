@@ -131,6 +131,9 @@ case $GITHUB_MIRROR in
 	cnpmjs)
 		GITHUB_SOURCE='https://github.com.cnpmjs.org/'
 		;;
+	my)
+		GITHUB_SOURCE=${GITHUB_SOURCE}
+		;;
 	*)
 		GITHUB_SOURCE='https://github.com/'
 		;;
