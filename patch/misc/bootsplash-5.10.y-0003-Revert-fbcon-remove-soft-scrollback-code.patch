@@ -15,24 +15,24 @@ index b30a667663ef..fbf10e62bcde 100644
 +static int softback_lines;/* console mappings */
  static int first_fb_vc;
  static int last_fb_vc = MAX_NR_CONSOLES - 1;
- static int fbcon_is_default = 1; 
+ static int fbcon_is_default = 1;
 @@ -161,8 +166,12 @@
- 
+
  static const struct consw fb_con;
- 
+
 +#define CM_SOFTBACK	(8)
 +
  #define advance_row(p, delta) (unsigned short *)((unsigned long)(p) + (delta) * vc->vc_size_row)
- 
+
 +static int fbcon_set_origin(struct vc_data *);
 +
  static int fbcon_cursor_noblink;
- 
+
  #define divides(a, b)	((!(a) || (b)%(a)) ? 0 : 1)
 @@ -363,6 +372,18 @@
  	return color;
  }
- 
+
 +static void fbcon_update_softback(struct vc_data *vc)
 +{
 +	int l = fbcon_softback_size / vc->vc_size_row;
@@ -50,7 +50,7 @@ index b30a667663ef..fbf10e62bcde 100644
  	struct fb_info *info = container_of(work, struct fb_info, queue);
 @@ -449,7 +470,13 @@
  		}
- 		
+
  		if (!strncmp(options, "scrollback:", 11)) {
 -			pr_warn("Ignoring scrollback size option\n");
 +			options += 11;
@@ -62,11 +62,11 @@ index b30a667663ef..fbf10e62bcde 100644
 +			}
  			continue;
  		}
- 		
+
 @@ -994,6 +1021,31 @@
- 
+
  	set_blitting_type(vc, info);
- 
+
 +	if (info->fix.type != FB_TYPE_TEXT) {
 +		if (fbcon_softback_size) {
 +			if (!softback_buf) {
@@ -98,7 +98,7 @@ index b30a667663ef..fbf10e62bcde 100644
 @@ -1167,6 +1219,9 @@
  	if (logo)
  		fbcon_prepare_logo(vc, info, cols, rows, new_cols, new_rows);
- 
+
 +	if (vc == svc && softback_buf)
 +		fbcon_update_softback(vc);
 +
@@ -111,12 +111,12 @@ index b30a667663ef..fbf10e62bcde 100644
  	struct fbcon_ops *ops = info->fbcon_par;
 +	int y;
   	int c = scr_readw((u16 *) vc->vc_pos);
- 
+
  	ops->cur_blink_jiffies = msecs_to_jiffies(vc->vc_cur_blink_ms);
 @@ -1343,6 +1399,15 @@
- 
+
  	ops->cursor_flash = (mode == CM_ERASE) ? 0 : 1;
- 
+
 +	if (mode & CM_SOFTBACK) {
 +		mode &= ~CM_SOFTBACK;
 +		y = softback_lines;
@@ -130,18 +130,18 @@ index b30a667663ef..fbf10e62bcde 100644
  		    get_color(vc, info, c, 0));
  }
 @@ -1414,6 +1479,8 @@
- 
+
  	if (con_is_visible(vc)) {
  		update_screen(vc);
 +		if (softback_buf)
 +			fbcon_update_softback(vc);
  	}
  }
- 
+
 @@ -1551,6 +1618,99 @@
  	scrollback_current = 0;
  }
- 
+
 +static void fbcon_redraw_softback(struct vc_data *vc, struct fbcon_display *p,
 +				  long delta)
 +{
@@ -241,7 +241,7 @@ index b30a667663ef..fbf10e62bcde 100644
 @@ -1690,6 +1850,31 @@
  	}
  }
- 
+
 +static inline void fbcon_softback_note(struct vc_data *vc, int t,
 +				       int count)
 +{
@@ -278,11 +278,11 @@ index b30a667663ef..fbf10e62bcde 100644
 +			fbcon_softback_note(vc, t, count);
  		if (logo_shown >= 0)
  			goto redraw_up;
- 		switch (p->scrollmode) {
+ 		switch (p->yscroll) {
 @@ -2080,6 +2267,17 @@
  	info = registered_fb[con2fb_map[vc->vc_num]];
  	ops = info->fbcon_par;
- 
+
 +	if (bootsplash_would_render_now())
 +		bootsplash_render_full(info);
 +
@@ -296,11 +296,11 @@ index b30a667663ef..fbf10e62bcde 100644
 +
  	if (logo_shown >= 0) {
  		struct vc_data *conp2 = vc_cons[logo_shown].d;
- 
+
 @@ -2415,6 +2613,9 @@
  	int cnt;
  	char *old_data = NULL;
- 
+
 +	if (con_is_visible(vc) && softback_lines)
 +		fbcon_set_origin(vc);
 +
@@ -317,13 +317,13 @@ index b30a667663ef..fbf10e62bcde 100644
  		   && vc->vc_mode == KD_TEXT) {
  		fbcon_clear_margins(vc, 0);
 @@ -2598,7 +2801,19 @@
- 
+
  static u16 *fbcon_screen_pos(const struct vc_data *vc, int offset)
  {
 -	return (u16 *) (vc->vc_origin + offset);
 +	unsigned long p;
 +	int line;
-+	
++
 +	if (vc->vc_num != fg_console || !softback_lines)
 +		return (u16 *) (vc->vc_origin + offset);
 +	line = offset / vc->vc_size_row;
@@ -335,10 +335,10 @@ index b30a667663ef..fbf10e62bcde 100644
 +		p += softback_buf - softback_end;
 +	return (u16 *) p;
  }
- 
+
  static unsigned long fbcon_getxy(struct vc_data *vc, unsigned long pos,
 @@ -2612,7 +2827,22 @@
- 
+
  		x = offset % vc->vc_cols;
  		y = offset / vc->vc_cols;
 +		if (vc->vc_num == fg_console)
@@ -370,7 +370,7 @@ index b30a667663ef..fbf10e62bcde 100644
 +			p = (u16 *) vc->vc_origin;
  	}
  }
- 
+
 +static void fbcon_scrolldelta(struct vc_data *vc, int lines)
 +{
 +	struct fb_info *info = registered_fb[con2fb_map[fg_console]];
@@ -437,7 +437,7 @@ index b30a667663ef..fbf10e62bcde 100644
 +
 +	offset = disp->yscroll - scrollback_current;
 +	limit = disp->vrows;
-+	switch (disp->scrollmode) {
++	switch (disp->yscroll) {
 +	case SCROLL_WRAP_MOVE:
 +		info->var.vmode |= FB_VMODE_YWRAP;
 +		break;
@@ -471,14 +471,14 @@ index b30a667663ef..fbf10e62bcde 100644
  {
  	struct vc_data *vc = NULL;
 @@ -2703,6 +3033,8 @@
- 
+
  		fbcon_set_palette(vc, color_table);
  		update_screen(vc);
 +		if (softback_buf)
 +			fbcon_update_softback(vc);
  	}
  }
- 
+
 @@ -3113,6 +3445,8 @@
  	.con_font_default	= fbcon_set_def_font,
  	.con_font_copy 		= fbcon_copy_font,
@@ -491,10 +491,9 @@ index b30a667663ef..fbf10e62bcde 100644
 @@ -3346,6 +3680,9 @@
  	}
  #endif
- 
+
 +	kvfree((void *)softback_buf);
 +	softback_buf = 0UL;
 +
  	for_each_registered_fb(i) {
  		int pending = 0;
- 
