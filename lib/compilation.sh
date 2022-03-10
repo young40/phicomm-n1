@@ -687,7 +687,7 @@ compile_armbian-zsh()
 	sed -i "/^export ZSH=.*/a export ZSH_CACHE_DIR=~\/.oh-my-zsh\/cache" "${tmp_dir}/${armbian_zsh_dir}"/etc/skel/.zshrc
 
 	# define theme
-	sed -i 's/^ZSH_THEME=.*/ZSH_THEME="ys"/' "${tmp_dir}/${armbian_zsh_dir}"/etc/skel/.zshrc
+	# sed -i 's/^ZSH_THEME=.*/ZSH_THEME="ys"/' "${tmp_dir}/${armbian_zsh_dir}"/etc/skel/.zshrc
 
 	# disable prompt while update
 	sed -i 's/# DISABLE_UPDATE_PROMPT="true"/DISABLE_UPDATE_PROMPT="true"/g' "${tmp_dir}/${armbian_zsh_dir}"/etc/skel/.zshrc
